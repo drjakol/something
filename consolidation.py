@@ -1,7 +1,6 @@
 def check_consolidation(orderbook, threshold=0.5):
     """
-    تشخیص Consolidation
-    - اگر قیمت بین حمایت و مقاومت خیلی کم تغییر کند، در حالت Consolidation است
+    تشخیص Consolidation با threshold قابل تغییر
     """
     bids = orderbook.get("bids", [])
     asks = orderbook.get("asks", [])
@@ -14,5 +13,4 @@ def check_consolidation(orderbook, threshold=0.5):
 
     if (lowest_ask - highest_bid) / highest_bid * 100 < threshold:
         return True
-
     return False
