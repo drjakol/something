@@ -52,15 +52,6 @@ async def telegram_bot():
                 else:
                     breakout_real = True
 
-                # Consolidation Check
-                in_consolidation = check_consolidation(orderbook)
-
-                if True:  # True برای تست اولیه
-                    await bot.send_message(
-                        chat_id=CHANNEL_ID,
-                        text=f"✅ Nothing for {symbol} at {price} right now!"
-                    )
-
                 # ارسال سیگنال فقط اگر شرایط درست باشد
                 if stop_hunt and breakout_real and not in_consolidation:
                     # تعیین نوع استراتژی
