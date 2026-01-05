@@ -17,61 +17,76 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
 
+COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", 
+         "LTC/USDT", "DOGE/USDT", "LINK/USDT", "UNI/USDT"]
+
 @app.get("/")
 def root():
     return {"status": "bot is running"}
 
 async def telegram_bot():
     print("Bot is starting...")
-    prev_price = None
+    prev_prices = {symbol: None for symbol in COINS}
 
     while True:
-        try:
-            # دریافت دیتا
-            price = get_price("BTC/USDT")
-            orderbook = get_orderbook("BTC/USDT")
-            trades = get_trades("BTC/USDT")
-            liq = build_liquidity_map(orderbook)
-            delta_data = calculate_delta(trades)
+        for symbol in COINS:
+            try:
+                # دریافت دیتا
+                price = get_price(symbol)
+                orderbook = get_orderbook(symbol)
+                trades = get_trades(symbol)
+                liq = build_liquidity_map(orderbook)
+                delta_data = calculate_delta(trades)
 
-            # Stop Hunt
-            stop_hunt = detect_stop_hunt(
-                price=price,
-                liquidity=liq,
-                delta=delta_data["delta"]
-            )
-
-            # False Breakout Filter
-            if prev_price is not None:
-                breakout_real = filter_false_breakout(price, liq, prev_price)
-            else:
-                breakout_real = True
-
-            # Consolidation Check
-            in_consolidation = check_consolidation(orderbook)
-
-            # اگر سیگنال معتبر بود
-            if stop_hunt and breakout_real and not in_consolidation:
-                strategy_type = "Aggressive" if stop_hunt["strength"] > 50 else "Conservative"
-                await bot.send_message(
-                    chat_id=CHANNEL_ID,
-                    text=f"""
-🧠 Stop Hunt Detected – BTCUSDT
-Direction: {stop_hunt['type']}
-Reason: {stop_hunt['reason']}
-Price: {price}
-Support: {liq['support']}, Resistance: {liq['resistance']}
-Delta: {delta_data['delta']}
-Strategy Type: {strategy_type}
-"""
+                # Stop Hunt
+                stop_hunt = detect_stop_hunt(
+                    price=price,
+                    liquidity=liq,
+                    delta=delta_data["delta"]
                 )
 
-            prev_price = price
-            await asyncio.sleep(60)
+                # False Breakout Filter
+                prev_price = prev_prices.get(symbol)
+                if prev_price is not None:
+                    breakout_real = filter_false_breakout(price, liq, prev_price)
+                else:
+                    breakout_real = True
 
-        except Exception as e:
-            print(f"Error in bot loop: {e}")
-            await asyncio.sleep(60)
+                # Consolidation Check
+                in_consolidation = check_consolidation(orderbook)
+
+                # ارسال سیگنال فقط اگر شرایط درست باشد
+                if stop_hunt and breakout_real and not in_consolidation:
+                    # تعیین نوع استراتژی
+                    if stop_hunt["strength"] > 50:
+                        strategy_type = "Aggressive"
+                        emoji = "🔴"
+                    else:
+                        strategy_type = "Conservative"
+                        emoji = "🟢"
+
+                    await bot.send_message(
+                        chat_id=CHANNEL_ID,
+                        text=f"""
+{emoji} *Stop Hunt Detected – {symbol}*
+
+*Direction:* {stop_hunt['type']}
+*Reason:* {stop_hunt['reason']}
+*Price:* {price}
+*Support:* {liq['support']} | *Resistance:* {liq['resistance']}
+*Delta:* {delta_data['delta']}
+*Strategy Type:* {strategy_type}
+"""
+                    , parse_mode="Markdown")
+
+                prev_prices[symbol] = price
+                await asyncio.sleep(6)  # جلوگیری از محدودیت API
+
+            except Exception as e:
+                print(f"Error for {symbol}: {e}")
+                await asyncio.sleep(6)
+
+        await asyncio.sleep(120)  # بررسی دوره‌ای هر 120 ثانیه
 
 @app.on_event("startup")
 async def startup_event():
