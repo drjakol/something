@@ -1,8 +1,9 @@
 import asyncio
 import os
+import json
+from datetime import datetime
 from fastapi import FastAPI
 from telegram import Bot
-import uvicorn
 
 from data_okx import get_price, get_trades, get_orderbook
 from liquidity_map import build_liquidity_map
@@ -21,8 +22,9 @@ COINS = [
 ]
 
 SCORE_THRESHOLD = 70   # حداقل امتیاز ارسال سیگنال
+SIGNAL_LOG_FILE = "signals_log.jsonl"
 
-app = FastAPI()
+# ---------------- FASTAPI & BOT ----------------
 bot = Bot(token=BOT_TOKEN)
 
 # ---------------- UTILS ----------------
@@ -45,6 +47,22 @@ def build_signal_levels(price, direction):
             "tp2": int(price*0.97)
         }
 
+def log_signal(data, filename=SIGNAL_LOG_FILE):
+    with open(filename, "a", encoding="utf-8") as f:
+        f.write(json.dumps(data) + "\n")
+
+def orderbook_volatility(orderbook):
+    """Adaptive threshold برای Consolidation"""
+    bids = orderbook.get("bids", [])
+    asks = orderbook.get("asks", [])
+    if not bids or not asks:
+        return 0.5
+    bid_prices = [float(b[0]) for b in bids[:10]]
+    ask_prices = [float(a[0]) for a in asks[:10]]
+    mid = (bid_prices[0] + ask_prices[0]) / 2
+    spread = (ask_prices[0] - bid_prices[0]) / mid * 100
+    return spread
+
 # ---------------- SCORING SYSTEM ----------------
 def calculate_score(
     stop_hunt,
@@ -54,33 +72,17 @@ def calculate_score(
     liquidity
 ):
     score = 0
-
     # Stop Hunt
-    if not stop_hunt:
-        score += 20
-    else:
-        score -= 15
-
+    score += 20 if not stop_hunt else -15
     # False Breakout
-    if false_breakout_passed:
-        score += 20
-    else:
-        score -= 10
-
+    score += 20 if false_breakout_passed else -10
     # Consolidation
-    if not in_consolidation:
-        score += 15
-    else:
-        score -= 20
-
+    score += 15 if not in_consolidation else -20
     # Delta strength
-    if abs(delta_data["delta"]) > 10:
-        score += 15
-
+    score += 15 if abs(delta_data["delta"]) > 10 else 0
     # Liquidity clarity
     if liquidity["support"] and liquidity["resistance"]:
         score += 10
-
     return score
 
 # ---------------- MAIN BOT LOOP ----------------
@@ -91,10 +93,12 @@ async def telegram_bot():
     while True:
         for symbol in COINS:
             try:
+                # دریافت داده‌ها
                 price = await asyncio.to_thread(get_price, symbol)
                 orderbook = await asyncio.to_thread(get_orderbook, symbol)
                 trades = await asyncio.to_thread(get_trades, symbol)
 
+                # محاسبه
                 liquidity = build_liquidity_map(orderbook)
                 delta_data = calculate_delta(trades)
 
@@ -110,7 +114,8 @@ async def telegram_bot():
                     if prev_price else True
                 )
 
-                in_consolidation = check_consolidation(orderbook)
+                adaptive_threshold = min(max(orderbook_volatility(orderbook)*1.5, 0.3), 1.2)
+                in_consolidation = check_consolidation(orderbook, threshold=adaptive_threshold)
 
                 score = calculate_score(
                     stop_hunt,
@@ -125,6 +130,10 @@ async def telegram_bot():
                     strategy_type = "Conservative" if score < 85 else "Aggressive"
                     levels = build_signal_levels(price, direction)
 
+                    # محدود کردن پیام برای تلگرام
+                    bid_clusters = ", ".join([str(int(p)) for p, s in liquidity["bids"][:3]])
+                    ask_clusters = ", ".join([str(int(p)) for p, s in liquidity["asks"][:3]])
+
                     msg = f"""
 📍 {normalize_symbol(symbol)} – Signal Report
 
@@ -135,23 +144,33 @@ async def telegram_bot():
 🎯 TP1: {levels['tp1']} | TP2: {levels['tp2']}
 
 📊 Liquidity Pools:
-Bid Clusters: {", ".join(map(str, liquidity['bids']))}
-Ask Clusters: {", ".join(map(str, liquidity['asks']))}
+Bid Clusters: {bid_clusters}
+Ask Clusters: {ask_clusters}
 
 📌 Order Flow:
-Delta: {delta_data['delta']}%
-Absorption: {"✔" if delta_data.get("absorption") else "✖"}
-OI Trend: {delta_data.get("oi_trend", "N/A")}
-Funding: {delta_data.get("funding", "Neutral")}
+Delta: {delta_data['delta']}
 
 ⚡ False Breakout Filter: {"Passed" if false_breakout_passed else "Failed"}
 🚫 Stop Hunt: {"Not Detected" if not stop_hunt else "Detected"}
 """
 
-                    await bot.send_message(
-                        chat_id=CHANNEL_ID,
-                        text=msg
-                    )
+                    await bot.send_message(chat_id=CHANNEL_ID, text=msg)
+
+                    # لاگ سیگنال برای بک‌تست
+                    log_signal({
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "symbol": normalize_symbol(symbol),
+                        "direction": direction,
+                        "score": score,
+                        "entry": levels["entry"],
+                        "sl": levels["sl"],
+                        "tp1": levels["tp1"],
+                        "tp2": levels["tp2"],
+                        "delta": delta_data["delta"],
+                        "consolidation": in_consolidation,
+                        "stop_hunt": bool(stop_hunt),
+                        "false_breakout_passed": false_breakout_passed
+                    })
 
                 prev_prices[symbol] = price
                 await asyncio.sleep(6)
@@ -163,13 +182,20 @@ Funding: {delta_data.get("funding", "Neutral")}
         await asyncio.sleep(120)
 
 # ---------------- FASTAPI ----------------
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    asyncio.create_task(telegram_bot())
+    yield
+
+app = FastAPI(lifespan=lifespan)
+
 @app.get("/")
 def root():
     return {"status": "running"}
 
-@app.on_event("startup")
-async def startup():
-    asyncio.create_task(telegram_bot())
-
+# ---------------- RUN ----------------
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
