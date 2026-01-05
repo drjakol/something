@@ -2,7 +2,7 @@ import asyncio
 import os
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import defaultdict
 from fastapi import FastAPI
 from telegram import Bot
@@ -64,9 +64,6 @@ def calculate_pnl(entry_price, exit_price, direction, size=1):
         return (entry_price - exit_price) * size
 
 def auto_tune_threshold(symbol):
-    """
-    ساده‌ترین Auto-tune: اگر سیگنال‌ها زیاد ضرر دارند، Threshold افزایش می‌یابد
-    """
     sl_hits = 0
     total = 0
     try:
@@ -136,7 +133,10 @@ async def telegram_bot():
                 in_consolidation = check_consolidation(orderbook, threshold=adaptive_threshold)
 
                 score = calculate_score(stop_hunt, false_breakout_passed, in_consolidation, delta_data, liquidity)
-                score_history[symbol].append({"timestamp": datetime.utcnow().isoformat(), "score": score})
+                score_history[symbol].append({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "score": score
+                })
 
                 now = time.time()
                 if score >= SCORE_THRESHOLD:
@@ -173,13 +173,13 @@ Delta: {delta_data['delta']}%
                         await bot.send_message(chat_id=CHANNEL_ID, text=msg)
                         last_signal_time[symbol] = now
 
-                        # محاسبه PnL فرضی ساده
+                        # محاسبه PnL فرضی
                         entry_price = int(levels["entry"].split("–")[0])
-                        exit_price = levels["tp1"]  # فرض TP1
+                        exit_price = levels["tp1"]
                         pnl = calculate_pnl(entry_price, exit_price, direction)
 
                         log_signal({
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
                             "symbol": normalize_symbol(symbol),
                             "direction": direction,
                             "score": score,
