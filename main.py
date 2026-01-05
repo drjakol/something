@@ -20,7 +20,7 @@ COINS = [
     "DOT/USDT", "LTC/USDT", "DOGE/USDT"
 ]
 
-SCORE_THRESHOLD = 70   # حداقل امتیاز ارسال سیگنال
+SCORE_THRESHOLD = 10   # حداقل امتیاز ارسال سیگنال
 
 app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
