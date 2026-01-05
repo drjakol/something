@@ -17,11 +17,12 @@ def root():
 
 async def telegram_bot():
     print("Bot is starting...")
-    price = get_price("BTC/USDT")
-    await bot.send_message(
-        chat_id=CHANNEL_ID,
-        text=f"📡 Binance Connected\nBTC Price: {price}"
-    )
+price = get_price("BTC/USDT")
+
+await bot.send_message(
+    chat_id=CHANNEL_ID,
+    text=f"📡 Binance Connected\nBTC Price: {price}"
+)
 
     while True:
         await asyncio.sleep(60)
