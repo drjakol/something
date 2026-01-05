@@ -135,14 +135,12 @@ async def telegram_bot():
 🎯 TP1: {levels['tp1']} | TP2: {levels['tp2']}
 
 📊 Liquidity Pools:
-Bid Clusters: {", ".join(map(str, liquidity['bids']))}
-Ask Clusters: {", ".join(map(str, liquidity['asks']))}
+Bid Clusters: {bid_clusters}
+Ask Clusters: {ask_clusters}
 
 📌 Order Flow:
 Delta: {delta_data['delta']}%
-Absorption: {"✔" if delta_data.get("absorption") else "✖"}
-OI Trend: {delta_data.get("oi_trend", "N/A")}
-Funding: {delta_data.get("funding", "Neutral")}
+Absorp: {"✔" if delta_data.get("absorption") else "✖"} | OI: {delta_data.get("oi_trend", "N/A")} | Fund: {delta_data.get("funding", "Neutral")}
 
 ⚡ False Breakout Filter: {"Passed" if false_breakout_passed else "Failed"}
 🚫 Stop Hunt: {"Not Detected" if not stop_hunt else "Detected"}
