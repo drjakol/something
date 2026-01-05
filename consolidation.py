@@ -1,23 +1,18 @@
-def check_consolidation(orderbook, range_percent=0.5):
+def check_consolidation(orderbook, threshold=0.5):
     """
-    پارامترها:
-    - orderbook: dict با bids و asks
-    - range_percent: درصد محدوده برای تعیین Consolidation
-
-    خروجی:
-    - True اگر قیمت در محدوده Consolidation باشد
-    - False اگر روند واضحی داشته باشد
+    تشخیص Consolidation
+    - اگر قیمت بین حمایت و مقاومت خیلی کم تغییر کند، در حالت Consolidation است
     """
-    bids = [price for price, size in orderbook.get("bids", [])]
-    asks = [price for price, size in orderbook.get("asks", [])]
+    bids = orderbook.get("bids", [])
+    asks = orderbook.get("asks", [])
 
     if not bids or not asks:
         return False
 
-    high = max(asks)
-    low = min(bids)
+    highest_bid = max([float(b[0]) for b in bids if len(b) >= 2])
+    lowest_ask = min([float(a[0]) for a in asks if len(a) >= 2])
 
-    if (high - low) / low * 100 <= range_percent:
+    if (lowest_ask - highest_bid) / highest_bid * 100 < threshold:
         return True
 
     return False
