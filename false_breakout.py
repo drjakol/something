@@ -1,5 +1,3 @@
-# false_breakout.py
-
 def filter_false_breakout(price, liquidity, prev_price, threshold=50):
     """
     پارامترها:
