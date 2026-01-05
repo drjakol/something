@@ -28,7 +28,7 @@ async def telegram_bot():
         delta=delta_data["delta"]
     )
 
-    if stop_hunt:
+if stop_hunt:
     await bot.send_message(
         chat_id=CHANNEL_ID,
         text=f"""
