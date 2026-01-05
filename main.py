@@ -2,7 +2,7 @@ import asyncio
 import os
 from fastapi import FastAPI
 from telegram import Bot
-from data_bybit import get_price
+from data_okx import get_price
 import uvicorn
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -21,7 +21,7 @@ async def telegram_bot():
 
     await bot.send_message(
         chat_id=CHANNEL_ID,
-        text=f"📡 Bybit Futures Connected\nBTC Price: {price}"
+        text=f"📡 OKX Futures Connected\nBTC Price: {price}"
     )
 
     while True:
