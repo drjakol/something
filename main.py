@@ -20,7 +20,7 @@ COINS = [
     "DOT/USDT", "LTC/USDT", "DOGE/USDT"
 ]
 
-SCORE_THRESHOLD = 10   # حداقل امتیاز ارسال سیگنال
+SCORE_THRESHOLD = 30   # حداقل امتیاز ارسال سیگنال
 
 app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
@@ -133,12 +133,6 @@ async def telegram_bot():
 📈 Entry Zone: {levels['entry']}
 🛑 SL: {levels['sl']}
 🎯 TP1: {levels['tp1']} | TP2: {levels['tp2']}
-
-📌 Order Flow:
-Delta: {delta_data['delta']}%
-Absorp: {"✔" if delta_data.get("absorption") else "✖"} | OI: {delta_data.get("oi_trend", "N/A")} | Fund: {delta_data.get("funding", "Neutral")}
-
-⚡ FBF: {"✔" if false_breakout_passed else "✖"} | 🚫 SH: {"✖" if not stop_hunt else "✔"}
 """
 
                     await bot.send_message(
