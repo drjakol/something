@@ -17,15 +17,13 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
 
-# --- مسیر تست سلامت ربات ---
 @app.get("/")
 def root():
     return {"status": "bot is running"}
 
-# --- حلقه اصلی ربات ---
 async def telegram_bot():
     print("Bot is starting...")
-    prev_price = None  # برای False Breakout
+    prev_price = None
 
     while True:
         try:
@@ -69,17 +67,15 @@ Strategy Type: {strategy_type}
                 )
 
             prev_price = price
-            await asyncio.sleep(60)  # هر 60 ثانیه دیتا بررسی شود
+            await asyncio.sleep(60)
 
         except Exception as e:
             print(f"Error in bot loop: {e}")
             await asyncio.sleep(60)
 
-# --- اجرای ربات هنگام استارت سرور ---
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(telegram_bot())
 
-# --- اجرای FastAPI ---
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
