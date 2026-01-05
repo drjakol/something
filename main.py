@@ -21,7 +21,7 @@ COINS = [
     "DOT/USDT", "LTC/USDT", "DOGE/USDT"
 ]
 
-SCORE_THRESHOLD = 70   # حداقل امتیاز ارسال سیگنال
+SCORE_THRESHOLD = 30   # حداقل امتیاز ارسال سیگنال
 SIGNAL_LOG_FILE = "signals_log.jsonl"
 
 # ---------------- FASTAPI & BOT ----------------
