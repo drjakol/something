@@ -2,6 +2,7 @@ import asyncio
 import os
 from fastapi import FastAPI
 from telegram import Bot
+from data_binance import get_price
 import uvicorn
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -16,10 +17,10 @@ def root():
 
 async def telegram_bot():
     print("Bot is starting...")
-
+    price = get_price("BTC/USDT")
     await bot.send_message(
         chat_id=CHANNEL_ID,
-        text="✅ Bot successfully started and is running on Render Web Service."
+        text=f"📡 Binance Connected\nBTC Price: {price}"
     )
 
     while True:
