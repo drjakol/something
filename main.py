@@ -2,7 +2,7 @@ import asyncio
 import os
 from fastapi import FastAPI
 from telegram import Bot
-from data_okx import get_price
+from data_okx import get_price, get_trades, get_orderbook
 from liquidity_map import build_liquidity_map
 import uvicorn
 
