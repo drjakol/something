@@ -1,21 +1,17 @@
-def filter_false_breakout(price, liquidity, prev_price, threshold=50):
+def filter_false_breakout(price, liquidity, prev_price):
     """
-    پارامترها:
-    - price: قیمت فعلی
-    - liquidity: خروجی build_liquidity_map {"support": ..., "resistance": ...}
-    - prev_price: آخرین قیمت قبل
-    - threshold: حداقل اختلاف لازم برای تایید Breakout
-
-    خروجی:
-    - True اگر Breakout واقعی باشد
-    - False اگر Breakout جعلی باشد
+    جلوگیری از سیگنال‌های اشتباه Breakout
     """
-    # بررسی شکست مقاومت
-    if prev_price <= liquidity['resistance'] and price > liquidity['resistance'] + threshold:
-        return True
-    # بررسی شکست حمایت
-    if prev_price >= liquidity['support'] and price < liquidity['support'] - threshold:
+    if not liquidity:
         return True
 
-    # اگر هیچکدام نبود، شکست جعلی است
-    return False
+    if price > liquidity["resistance"] * 1.01:
+        return True
+    if price < liquidity["support"] * 0.99:
+        return True
+
+    # اگر حرکت خیلی کوچک بود
+    if abs(price - prev_price) < 0.5:
+        return False
+
+    return True
