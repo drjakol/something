@@ -134,9 +134,6 @@ async def telegram_bot():
 🛑 SL: {levels['sl']}
 🎯 TP1: {levels['tp1']} | TP2: {levels['tp2']}
 
-📊 LPs:
-Bid: {", ".join(map(str, liquidity['bids']))} | Ask: {", ".join(map(str, liquidity['asks']))}
-
 📌 Order Flow:
 Delta: {delta_data['delta']}%
 Absorp: {"✔" if delta_data.get("absorption") else "✖"} | OI: {delta_data.get("oi_trend", "N/A")} | Fund: {delta_data.get("funding", "Neutral")}
