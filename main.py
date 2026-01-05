@@ -110,11 +110,7 @@ async def telegram_bot():
                     if prev_price else True
                 )
 
-                in_consolidation = check_consolidation(
-                    price=price,
-                    orderbook=orderbook,
-                    trades=trades
-                )
+                in_consolidation = check_consolidation(orderbook)
 
                 score = calculate_score(
                     stop_hunt,
