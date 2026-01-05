@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from telegram import Bot
 from data_okx import get_price, get_trades, get_orderbook
 from liquidity_map import build_liquidity_map
+from stop_hunt import detect_stop_hunt
 import uvicorn
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -21,22 +22,22 @@ async def telegram_bot():
     price = get_price("BTC/USDT")
     orderbook = get_orderbook("BTC/USDT")
     liq = build_liquidity_map(orderbook)
+    stop_hunt = detect_stop_hunt(
+        price=price,
+        liquidity=liq,
+        delta=delta_data["delta"]
+    )
 
+    if stop_hunt:
     await bot.send_message(
         chat_id=CHANNEL_ID,
         text=f"""
-🗺 Liquidity Map – BTCUSDT
+🧠 Stop Hunt Detected – BTCUSDT
 
-Support Zone: {liq['support']}
-Resistance Zone: {liq['resistance']}
-
-Top Bid Liquidity:
-{liq['bid_liquidity'][:3]}
-
-Top Ask Liquidity:
-{liq['ask_liquidity'][:3]}
+Direction: {stop_hunt['type']}
+Reason: {stop_hunt['reason']}
 """
-)
+    )
 
     while True:
         await asyncio.sleep(60)
