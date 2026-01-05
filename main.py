@@ -3,6 +3,7 @@ import os
 from fastapi import FastAPI
 from telegram import Bot
 from data_okx import get_price
+from liquidity_map import build_liquidity_map
 import uvicorn
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -18,11 +19,24 @@ def root():
 async def telegram_bot():
     print("Bot is starting...")
     price = get_price("BTC/USDT")
+    orderbook = get_orderbook("BTC/USDT")
+    liq = build_liquidity_map(orderbook)
 
     await bot.send_message(
         chat_id=CHANNEL_ID,
-        text=f"📡 OKX Futures Connected\nBTC Price: {price}"
-    )
+        text=f"""
+🗺 Liquidity Map – BTCUSDT
+
+Support Zone: {liq['support']}
+Resistance Zone: {liq['resistance']}
+
+Top Bid Liquidity:
+{liq['bid_liquidity'][:3]}
+
+Top Ask Liquidity:
+{liq['ask_liquidity'][:3]}
+"""
+)
 
     while True:
         await asyncio.sleep(60)
