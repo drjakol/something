@@ -3,3 +3,5 @@ ccxt
 pandas
 numpy
 websocket-client
+fastapi
+uvicorn
