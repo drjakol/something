@@ -18,7 +18,6 @@ from kill_zones import get_kill_zone
 from range_tracker import update_asia_range, get_asia_range
 from break_retest import detect_break_retest
 from session_stats import session_winrate
-from stats_engine import calculate_stats
 from score_engine import smart_score_v2
 
 import ccxt
@@ -29,8 +28,8 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT"]
 SIGNAL_LOG_FILE = "signals_log.jsonl"
-COOLDOWN_SECONDS = 300       # فاصله سیگنال‌ها (5 دقیقه)
-SCORE_THRESHOLD = 10         # حداقل Smart Score برای ارسال سیگنال
+COOLDOWN_SECONDS = 300
+SCORE_THRESHOLD = 70
 
 DERIBIT_SYMBOL = "BTC-PERPETUAL"
 
@@ -67,12 +66,9 @@ def log_signal(data):
 # ---------------- DERIBIT ----------------
 async def get_deribit_price():
     try:
-        ticker = await asyncio.to_thread(
-            deribit.fetch_ticker, DERIBIT_SYMBOL
-        )
+        ticker = await asyncio.to_thread(deribit.fetch_ticker, DERIBIT_SYMBOL)
         return ticker["last"]
-    except Exception as e:
-        print("Deribit price error:", e)
+    except:
         return None
 
 async def get_deribit_oi():
@@ -82,13 +78,12 @@ async def get_deribit_oi():
             {"currency": "BTC", "kind": "future"}
         )
         return float(data["result"][0]["open_interest"])
-    except Exception as e:
-        print("Deribit OI error:", e)
+    except:
         return 0
 
-# ---------------- MAIN BOT LOOP ----------------
+# ---------------- MAIN LOOP ----------------
 async def telegram_bot():
-    print("🚀 Institutional Killer Bot v2 – Real Money Ready Started")
+    print("🚀 Institutional Killer Bot – Stable Build Started")
 
     while True:
         for symbol in COINS:
@@ -98,48 +93,41 @@ async def telegram_bot():
                 if not session or not kill_zone:
                     continue
 
-                okx_price = await asyncio.to_thread(get_price, symbol)
-                okx_trades = await asyncio.to_thread(get_trades, symbol)
-                okx_orderbook = await asyncio.to_thread(get_orderbook, symbol)
+                price = await asyncio.to_thread(get_price, symbol)
+                trades = await asyncio.to_thread(get_trades, symbol)
+                orderbook = await asyncio.to_thread(get_orderbook, symbol)
 
                 if session == "Asia":
-                    update_asia_range(symbol, okx_price)
+                    update_asia_range(symbol, price)
                 asia_levels = get_asia_range(symbol)
 
-                liquidity = build_liquidity_map(okx_orderbook)
-                orderflow = calculate_orderflow(okx_trades)
+                liquidity = build_liquidity_map(orderbook)
+                orderflow = calculate_orderflow(trades)
                 direction = "LONG" if orderflow["delta"] > 0 else "SHORT"
 
                 br_confirmed = detect_break_retest(
-                    okx_price,
-                    asia_levels if session != "Asia" else None,
-                    direction
+                    price, asia_levels, direction, symbol
                 )
 
-                stop_hunt = detect_stop_hunt(
-                    okx_price,
-                    liquidity,
-                    orderflow["delta"]
-                )
-
-                consolidation = check_consolidation(okx_orderbook)
+                stop_hunt = detect_stop_hunt(price, liquidity, orderflow["delta"])
+                consolidation = check_consolidation(orderbook)
 
                 deri_price = await get_deribit_price()
                 deri_oi = await get_deribit_oi()
-                price = (okx_price + deri_price) / 2 if deri_price else okx_price
+                final_price = (price + deri_price) / 2 if deri_price else price
 
-                # ---------------- Smart Score Real Money ----------------
-                base_score = 0
-                base_score += 25 if kill_zone else 0
-                base_score += 20 if br_confirmed else 0
-                base_score += 30 if abs(orderflow["delta"]) > 50 else 0
-                base_score += 10 if liquidity else 0
-                base_score += 15 if stop_hunt else 0
-                base_score += 20 if not consolidation else 0
-                base_score += int(deri_oi / 1_000_000 * 10)
+                base_score = (
+                    (25 if kill_zone else 0) +
+                    (20 if br_confirmed else 0) +
+                    (30 if abs(orderflow["delta"]) > 50 else 0) +
+                    (10 if liquidity else 0) +
+                    (15 if stop_hunt else 0) +
+                    (20 if not consolidation else 0) +
+                    int(deri_oi / 1_000_000 * 10)
+                )
 
-                session_win = session_winrate()
-                score = smart_score_v2(base_score=base_score, winrate=session_win.get(session, 50))
+                winrates = session_winrate()
+                score = smart_score_v2(base_score, winrates.get(session, 50))
 
                 now = time.time()
                 if score < SCORE_THRESHOLD:
@@ -147,34 +135,19 @@ async def telegram_bot():
                 if now - last_signal_time[symbol] < COOLDOWN_SECONDS:
                     continue
 
-                levels = build_signal_levels(price, direction)
+                levels = build_signal_levels(final_price, direction)
 
-                # ---------------- Telegram Message ----------------
-                msg = f"""
-🔥 {normalize_symbol(symbol)} INSTITUTIONAL SIGNAL
-
-🌍 Session: {session}
-⏱ Kill Zone: {kill_zone}
-📊 Smart Score: {score}
-
-🟢 Direction: {direction}
-💰 Entry: {levels['entry']}
-🛑 SL: {levels['sl']}
-🎯 TP1: {levels['tp1']} | TP2: {levels['tp2']}
-
-📉 Break & Retest: {"✅" if br_confirmed else "❌"}
-🧲 Stop Hunt: {"✅" if stop_hunt else "❌"}
-📦 Consolidation: {"❌ NO TRADE" if consolidation else "OK"}
-
-📈 Orderflow:
-Delta: {orderflow['delta']}
-CVD: {orderflow['cvd']}
-
-📊 Session Winrate:
-Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--")}% | New York: {session_win.get("New York", "--")}%
-"""
+                msg = (
+                    f"🔥 {normalize_symbol(symbol)} SIGNAL\n"
+                    f"📊 Score: {score}\n"
+                    f"📈 {direction}\n"
+                    f"🎯 Entry: {levels['entry']}\n"
+                    f"🛑 SL: {levels['sl']}\n"
+                    f"✅ TP1: {levels['tp1']} | TP2: {levels['tp2']}"
+                )
 
                 await bot.send_message(chat_id=CHANNEL_ID, text=msg)
+
                 log_signal({
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "symbol": normalize_symbol(symbol),
@@ -191,8 +164,7 @@ Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--"
                 await asyncio.sleep(2)
 
             except Exception as e:
-                print(f"❌ Error {symbol}:", e)
-                await asyncio.sleep(2)
+                print(f"❌ {symbol} error:", e)
 
         await asyncio.sleep(5)
 
@@ -208,13 +180,8 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 def root():
-    return {"status": "Institutional Bot Running – Real Money Ready"}
+    return {"status": "Institutional Bot Running"}
 
-# ---------------- RUN FASTAPI ----------------
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", 8000))
-    )
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
