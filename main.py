@@ -28,8 +28,8 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT"]
 SIGNAL_LOG_FILE = "signals_log.jsonl"
-COOLDOWN_SECONDS = 300       # فاصله سیگنال‌ها (5 دقیقه)
-SCORE_THRESHOLD = 10         # حداقل Smart Score برای ارسال سیگنال
+COOLDOWN_SECONDS = 600       # فاصله سیگنال‌ها (5 دقیقه)
+SCORE_THRESHOLD = 70         # حداقل Smart Score برای ارسال سیگنال
 
 DERIBIT_SYMBOL = "BTC-PERPETUAL"
 
