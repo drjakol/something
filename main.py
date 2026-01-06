@@ -18,6 +18,7 @@ from kill_zones import get_kill_zone
 from range_tracker import update_asia_range, get_asia_range
 from break_retest import detect_break_retest
 from session_stats import session_winrate
+from stats_engine import calculate_stats
 from score_engine import smart_score_v2
 
 import ccxt
@@ -87,23 +88,17 @@ async def get_deribit_oi():
 
 # ---------------- MAIN BOT LOOP ----------------
 async def telegram_bot():
-    print("🚀 Institutional Killer Bot – Debug & Anti-Spam Build Started")
-
-    # پیام تست برای اطمینان از کارکرد Bot
-    try:
-        await bot.send_message(chat_id=CHANNEL_ID, text="✅ Institutional Bot Loop Started")
-    except Exception as e:
-        print("❌ Telegram Test Message Error:", e)
+    print("🚀 Institutional Killer Bot – Anti‑Spam Build Started")
 
     while True:
+        session = active_session()
+        kill_zone = get_kill_zone()
+        if not session:
+            await asyncio.sleep(5)
+            continue
+
         for symbol in COINS:
             try:
-                session = active_session()
-                kill_zone = get_kill_zone()
-                if not session or not kill_zone:
-                    print(f"DEBUG: {symbol} skipped | session={session} kill_zone={kill_zone}")
-                    continue
-
                 okx_price = await asyncio.to_thread(get_price, symbol)
                 okx_trades = await asyncio.to_thread(get_trades, symbol)
                 okx_orderbook = await asyncio.to_thread(get_orderbook, symbol)
@@ -130,9 +125,14 @@ async def telegram_bot():
 
                 consolidation = check_consolidation(okx_orderbook)
 
-                deri_price = await get_deribit_price()
-                deri_oi = await get_deribit_oi()
-                price = (okx_price + deri_price) / 2 if deri_price else okx_price
+                # --- قیمت ترکیبی فقط برای BTC ---
+                if symbol == "BTC/USDT":
+                    deri_price = await get_deribit_price()
+                    price = (okx_price + deri_price) / 2 if deri_price else okx_price
+                    deri_oi = await get_deribit_oi()
+                else:
+                    price = okx_price
+                    deri_oi = 0
 
                 # ---------------- Smart Score ----------------
                 base_score = 0
@@ -147,12 +147,13 @@ async def telegram_bot():
                 session_win = session_winrate()
                 score = smart_score_v2(base_score=base_score, winrate=session_win.get(session, 50))
 
+                # Anti-Spam
                 now = time.time()
-                print(f"DEBUG: {symbol} | base_score={base_score} | score={score} | br_confirmed={br_confirmed} | stop_hunt={stop_hunt} | liquidity={bool(liquidity)} | last_signal={last_signal_time[symbol]}")
-
                 if score < SCORE_THRESHOLD:
+                    print(f"DEBUG: {symbol} skipped | score={score} below threshold")
                     continue
                 if now - last_signal_time[symbol] < COOLDOWN_SECONDS:
+                    print(f"DEBUG: {symbol} skipped | cooldown active")
                     continue
 
                 levels = build_signal_levels(price, direction)
@@ -179,26 +180,24 @@ Delta: {orderflow['delta']}
 CVD: {orderflow['cvd']}
 
 📊 Session Winrate:
-Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--")}% | New York: {session_win.get("New York", "--")}%
+Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--")}% | New York: {session_win.get("New York", "--")}% 
 """
 
-                try:
-                    await bot.send_message(chat_id=CHANNEL_ID, text=msg)
-                    last_signal_time[symbol] = now
-                    log_signal({
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "symbol": normalize_symbol(symbol),
-                        "session": session,
-                        "direction": direction,
-                        "entry": levels["entry"],
-                        "sl": levels["sl"],
-                        "tp1": levels["tp1"],
-                        "tp2": levels["tp2"],
-                        "score": score
-                    })
-                except Exception as e:
-                    print(f"❌ Telegram Send Error {symbol}:", e)
+                await bot.send_message(chat_id=CHANNEL_ID, text=msg)
+                log_signal({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "symbol": normalize_symbol(symbol),
+                    "session": session,
+                    "direction": direction,
+                    "entry": levels["entry"],
+                    "sl": levels["sl"],
+                    "tp1": levels["tp1"],
+                    "tp2": levels["tp2"],
+                    "score": score
+                })
 
+                last_signal_time[symbol] = now
+                print(f"DEBUG: {symbol} sent | score={score} | direction={direction} | price={price}")
                 await asyncio.sleep(2)
 
             except Exception as e:
@@ -211,9 +210,19 @@ Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--"
 app = FastAPI()
 
 @app.on_event("startup")
-async def start_bot():
+async def startup_event():
     asyncio.create_task(telegram_bot())
 
 @app.get("/")
 def root():
-    return {"status": "Institutional Bot Running – Debug & Anti-Spam Ready"}
+    return {"status": "Institutional Bot Running – Anti-Spam Ready"}
+
+# ---------------- RUN FASTAPI ----------------
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", 8000,)),
+        log_level="info"
+    )
