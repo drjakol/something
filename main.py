@@ -20,10 +20,6 @@ from range_tracker import update_asia_range, get_asia_range
 from break_retest import detect_break_retest
 from stats_engine import calculate_stats
 from session_stats import session_winrate
-from dashboard import fastapi_app as dashboard_app
-
-app = dashboard_app
-
 
 import ccxt
 deribit = ccxt.deribit({"enableRateLimit": True})
