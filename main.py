@@ -29,8 +29,8 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT"]
 SIGNAL_LOG_FILE = "signals_log.jsonl"
 
-COOLDOWN_SECONDS = 600          # ⏱ 10 minutes
-SCORE_THRESHOLD = 10            # 🎯 Minimum quality
+COOLDOWN_SECONDS = 600          # ⏱ 10 minutes cooldown
+SCORE_THRESHOLD = 10            # 🎯 Minimum Smart Score
 
 DERIBIT_SYMBOL = "BTC-PERPETUAL"
 
@@ -118,7 +118,7 @@ async def telegram_bot():
                     continue
 
                 br_confirmed = detect_break_retest(
-                    price, asia_levels, direction, symbol
+                    price, asia_levels, direction
                 )
 
                 stop_hunt = detect_stop_hunt(
@@ -195,6 +195,22 @@ async def telegram_bot():
         await asyncio.sleep(5)
 
 # ================= FASTAPI =================
-from contextlib import asynccontextmanager
+from fastapi import FastAPI
 
-@asynccontextmanager
+app = FastAPI()
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(telegram_bot())
+
+@app.get("/")
+def root():
+    return {"status": "Institutional Bot Running – Anti‑Spam Active"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", 8000))
+    )
