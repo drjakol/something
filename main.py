@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 from collections import defaultdict
 
+from fastapi import FastAPI
 from telegram import Bot
 
 from data_okx import get_price, get_trades, get_orderbook
@@ -28,8 +29,8 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT"]
 SIGNAL_LOG_FILE = "signals_log.jsonl"
-COOLDOWN_SECONDS = 10       # برای تست خیلی کوتاه
-SCORE_THRESHOLD = 0         # برای تست پیام فوری
+COOLDOWN_SECONDS = 300       # فاصله سیگنال‌ها (5 دقیقه)
+SCORE_THRESHOLD = 10         # حداقل Smart Score برای ارسال سیگنال
 
 DERIBIT_SYMBOL = "BTC-PERPETUAL"
 
@@ -87,14 +88,13 @@ async def get_deribit_oi():
 
 # ---------------- MAIN BOT LOOP ----------------
 async def telegram_bot():
-    print("🚀 Institutional Killer Bot v2 Test Started")
+    print("🚀 Institutional Killer Bot v2 – Real Money Ready Started")
 
     while True:
         for symbol in COINS:
             try:
                 session = active_session()
                 kill_zone = get_kill_zone()
-
                 if not session or not kill_zone:
                     continue
 
@@ -128,10 +128,18 @@ async def telegram_bot():
                 deri_oi = await get_deribit_oi()
                 price = (okx_price + deri_price) / 2 if deri_price else okx_price
 
-                # Smart Score
+                # ---------------- Smart Score Real Money ----------------
+                base_score = 0
+                base_score += 25 if kill_zone else 0
+                base_score += 20 if br_confirmed else 0
+                base_score += 30 if abs(orderflow["delta"]) > 50 else 0
+                base_score += 10 if liquidity else 0
+                base_score += 15 if stop_hunt else 0
+                base_score += 20 if not consolidation else 0
+                base_score += int(deri_oi / 1_000_000 * 10)
+
                 session_win = session_winrate()
-                stats = calculate_stats()
-                score = smart_score_v2(base_score=100, winrate=session_win.get(session, 50))
+                score = smart_score_v2(base_score=base_score, winrate=session_win.get(session, 50))
 
                 now = time.time()
                 if score < SCORE_THRESHOLD:
@@ -141,6 +149,7 @@ async def telegram_bot():
 
                 levels = build_signal_levels(price, direction)
 
+                # ---------------- Telegram Message ----------------
                 msg = f"""
 🔥 {normalize_symbol(symbol)} INSTITUTIONAL SIGNAL
 
@@ -187,7 +196,25 @@ Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--"
 
         await asyncio.sleep(5)
 
+# ---------------- FASTAPI ----------------
+from contextlib import asynccontextmanager
 
-# ---------------- RUN STANDALONE ----------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    asyncio.create_task(telegram_bot())
+    yield
+
+app = FastAPI(lifespan=lifespan)
+
+@app.get("/")
+def root():
+    return {"status": "Institutional Bot Running – Real Money Ready"}
+
+# ---------------- RUN FASTAPI ----------------
 if __name__ == "__main__":
-    asyncio.run(telegram_bot())
+    import uvicorn
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", 8000))
+    )
