@@ -11,13 +11,9 @@ from session_filter import active_session
 from kill_zones import get_kill_zone
 from range_tracker import update_asia_range, get_asia_range
 from break_retest import detect_break_retest
-
 from coinglass_client import (
-    get_open_interest,
-    get_long_short_ratio,
-    get_liquidations,
-    get_options_oi,
-    get_etf_flow
+    get_open_interest, get_long_short_ratio,
+    get_liquidations, get_options_oi, get_etf_flow
 )
 from macro_score import macro_score
 
