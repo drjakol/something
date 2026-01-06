@@ -2,16 +2,10 @@ import ccxt
 
 exchange = ccxt.bybit({
     "enableRateLimit": True,
-    "options": {
-        "defaultType": "future"
-    }
+    "options": {"defaultType": "future"}
 })
 
-SYMBOLS = [
-    "BTC/USDT", "SOL/USDT", "AVAX/USDT",
-    "DOT/USDT", "LTC/USDT", "DOGE/USDT",
-    "LINK/USDT", "UNI/USDT"
-]
+SYMBOLS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT", "DOGE/USDT", "LINK/USDT", "UNI/USDT"]
 
 def get_orderbook(symbol, limit=100):
     return exchange.fetch_order_book(symbol, limit=limit)
