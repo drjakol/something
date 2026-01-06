@@ -18,7 +18,6 @@ from kill_zones import get_kill_zone
 from range_tracker import update_asia_range, get_asia_range
 from break_retest import detect_break_retest
 from session_stats import session_winrate
-from stats_engine import calculate_stats
 from score_engine import smart_score_v2
 
 import ccxt
@@ -91,14 +90,14 @@ async def telegram_bot():
     print("🚀 Institutional Killer Bot – Anti‑Spam Build Started")
 
     while True:
-        session = active_session()
-        kill_zone = get_kill_zone()
-        if not session:
-            await asyncio.sleep(5)
-            continue
-
         for symbol in COINS:
             try:
+                session = active_session()
+                kill_zone = get_kill_zone()
+                if not session or not kill_zone:
+                    print(f"DEBUG: {symbol} skipped | session={session} kill_zone={kill_zone}")
+                    continue
+
                 okx_price = await asyncio.to_thread(get_price, symbol)
                 okx_trades = await asyncio.to_thread(get_trades, symbol)
                 okx_orderbook = await asyncio.to_thread(get_orderbook, symbol)
@@ -125,14 +124,9 @@ async def telegram_bot():
 
                 consolidation = check_consolidation(okx_orderbook)
 
-                # --- قیمت ترکیبی فقط برای BTC ---
-                if symbol == "BTC/USDT":
-                    deri_price = await get_deribit_price()
-                    price = (okx_price + deri_price) / 2 if deri_price else okx_price
-                    deri_oi = await get_deribit_oi()
-                else:
-                    price = okx_price
-                    deri_oi = 0
+                deri_price = await get_deribit_price()
+                deri_oi = await get_deribit_oi()
+                price = (okx_price + deri_price) / 2 if deri_price else okx_price
 
                 # ---------------- Smart Score ----------------
                 base_score = 0
@@ -142,18 +136,22 @@ async def telegram_bot():
                 base_score += 10 if liquidity else 0
                 base_score += 15 if stop_hunt else 0
                 base_score += 20 if not consolidation else 0
-                base_score += int(deri_oi / 1_000_000 * 10)
+
+                # Deribit OI فقط BTC
+                if symbol == "BTC/USDT":
+                    deri_score = min(int(deri_oi / 1_000_000 * 10), 10)
+                else:
+                    deri_score = 0
+                base_score += deri_score
 
                 session_win = session_winrate()
                 score = smart_score_v2(base_score=base_score, winrate=session_win.get(session, 50))
+                score = min(score, 100)  # محدود کردن Score به 100
 
-                # Anti-Spam
                 now = time.time()
                 if score < SCORE_THRESHOLD:
-                    print(f"DEBUG: {symbol} skipped | score={score} below threshold")
                     continue
                 if now - last_signal_time[symbol] < COOLDOWN_SECONDS:
-                    print(f"DEBUG: {symbol} skipped | cooldown active")
                     continue
 
                 levels = build_signal_levels(price, direction)
@@ -180,8 +178,7 @@ Delta: {orderflow['delta']}
 CVD: {orderflow['cvd']}
 
 📊 Session Winrate:
-Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--")}% | New York: {session_win.get("New York", "--")}% 
-"""
+Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--")}% | New York: {session_win.get("New York", "--")}%"""
 
                 await bot.send_message(chat_id=CHANNEL_ID, text=msg)
                 log_signal({
@@ -197,7 +194,6 @@ Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--"
                 })
 
                 last_signal_time[symbol] = now
-                print(f"DEBUG: {symbol} sent | score={score} | direction={direction} | price={price}")
                 await asyncio.sleep(2)
 
             except Exception as e:
@@ -215,7 +211,7 @@ async def startup_event():
 
 @app.get("/")
 def root():
-    return {"status": "Institutional Bot Running – Anti-Spam Ready"}
+    return {"status": "Institutional Bot Running – Real Money Ready"}
 
 # ---------------- RUN FASTAPI ----------------
 if __name__ == "__main__":
@@ -223,6 +219,5 @@ if __name__ == "__main__":
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=int(os.getenv("PORT", 8000,)),
-        log_level="info"
+        port=int(os.getenv("PORT", 8000, 8000))
     )
