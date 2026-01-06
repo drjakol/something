@@ -199,7 +199,6 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start bot on app startup
     asyncio.create_task(telegram_bot())
     yield
 
