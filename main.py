@@ -28,8 +28,8 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT"]
 SIGNAL_LOG_FILE = "signals_log.jsonl"
-COOLDOWN_SECONDS = 60       # Anti-Spam: فاصله پیام‌ها
-SCORE_THRESHOLD = 10        # حداقل Smart Score برای ارسال سیگنال
+COOLDOWN_SECONDS = 300       # فاصله سیگنال‌ها (5 دقیقه)
+SCORE_THRESHOLD = 10         # حداقل Smart Score برای ارسال سیگنال
 
 DERIBIT_SYMBOL = "BTC-PERPETUAL"
 
@@ -66,7 +66,9 @@ def log_signal(data):
 # ---------------- DERIBIT ----------------
 async def get_deribit_price():
     try:
-        ticker = await asyncio.to_thread(deribit.fetch_ticker, DERIBIT_SYMBOL)
+        ticker = await asyncio.to_thread(
+            deribit.fetch_ticker, DERIBIT_SYMBOL
+        )
         return ticker["last"]
     except Exception as e:
         print("Deribit price error:", e)
@@ -85,7 +87,13 @@ async def get_deribit_oi():
 
 # ---------------- MAIN BOT LOOP ----------------
 async def telegram_bot():
-    print("🚀 Institutional Killer Bot – Anti‑Spam Build Started")
+    print("🚀 Institutional Killer Bot – Debug & Anti-Spam Build Started")
+
+    # پیام تست برای اطمینان از کارکرد Bot
+    try:
+        await bot.send_message(chat_id=CHANNEL_ID, text="✅ Institutional Bot Loop Started")
+    except Exception as e:
+        print("❌ Telegram Test Message Error:", e)
 
     while True:
         for symbol in COINS:
@@ -93,6 +101,7 @@ async def telegram_bot():
                 session = active_session()
                 kill_zone = get_kill_zone()
                 if not session or not kill_zone:
+                    print(f"DEBUG: {symbol} skipped | session={session} kill_zone={kill_zone}")
                     continue
 
                 okx_price = await asyncio.to_thread(get_price, symbol)
@@ -121,14 +130,9 @@ async def telegram_bot():
 
                 consolidation = check_consolidation(okx_orderbook)
 
-                # ---------------- Price Logic ----------------
-                if symbol == "BTC/USDT":
-                    deri_price = await get_deribit_price()
-                    price = (okx_price + (deri_price or okx_price)) / 2
-                    deri_oi = await get_deribit_oi()
-                else:
-                    price = okx_price
-                    deri_oi = 0  # فقط برای BTC اثر دارد
+                deri_price = await get_deribit_price()
+                deri_oi = await get_deribit_oi()
+                price = (okx_price + deri_price) / 2 if deri_price else okx_price
 
                 # ---------------- Smart Score ----------------
                 base_score = 0
@@ -138,16 +142,14 @@ async def telegram_bot():
                 base_score += 10 if liquidity else 0
                 base_score += 15 if stop_hunt else 0
                 base_score += 20 if not consolidation else 0
-                base_score += min(int(deri_oi / 1_000_000 * 10), 20)  # حداکثر 20 امتیاز از OI
+                base_score += int(deri_oi / 1_000_000 * 10)
 
                 session_win = session_winrate()
                 score = smart_score_v2(base_score=base_score, winrate=session_win.get(session, 50))
 
-                # ---------------- Debug Info ----------------
-                print(f"DEBUG: {symbol} | base_score={base_score} | score={score} | br_confirmed={br_confirmed} | stop_hunt={stop_hunt} | liquidity={liquidity is not None} | price={price}")
-
-                # ---------------- Anti-Spam ----------------
                 now = time.time()
+                print(f"DEBUG: {symbol} | base_score={base_score} | score={score} | br_confirmed={br_confirmed} | stop_hunt={stop_hunt} | liquidity={bool(liquidity)} | last_signal={last_signal_time[symbol]}")
+
                 if score < SCORE_THRESHOLD:
                     continue
                 if now - last_signal_time[symbol] < COOLDOWN_SECONDS:
@@ -161,7 +163,7 @@ async def telegram_bot():
 
 🌍 Session: {session}
 ⏱ Kill Zone: {kill_zone}
-📊 Score: {score}
+📊 Smart Score: {score}
 
 🟢 Direction: {direction}
 💰 Entry: {levels['entry']}
@@ -177,22 +179,26 @@ Delta: {orderflow['delta']}
 CVD: {orderflow['cvd']}
 
 📊 Session Winrate:
-Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--")}% | New York: {session_win.get("New York", "--")}%"""
-                
-                await bot.send_message(chat_id=CHANNEL_ID, text=msg)
-                log_signal({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "symbol": normalize_symbol(symbol),
-                    "session": session,
-                    "direction": direction,
-                    "entry": levels["entry"],
-                    "sl": levels["sl"],
-                    "tp1": levels["tp1"],
-                    "tp2": levels["tp2"],
-                    "score": score
-                })
+Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--")}% | New York: {session_win.get("New York", "--")}%
+"""
 
-                last_signal_time[symbol] = now
+                try:
+                    await bot.send_message(chat_id=CHANNEL_ID, text=msg)
+                    last_signal_time[symbol] = now
+                    log_signal({
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "symbol": normalize_symbol(symbol),
+                        "session": session,
+                        "direction": direction,
+                        "entry": levels["entry"],
+                        "sl": levels["sl"],
+                        "tp1": levels["tp1"],
+                        "tp2": levels["tp2"],
+                        "score": score
+                    })
+                except Exception as e:
+                    print(f"❌ Telegram Send Error {symbol}:", e)
+
                 await asyncio.sleep(2)
 
             except Exception as e:
@@ -202,24 +208,12 @@ Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--"
         await asyncio.sleep(5)
 
 # ---------------- FASTAPI ----------------
-from contextlib import asynccontextmanager
+app = FastAPI()
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+@app.on_event("startup")
+async def start_bot():
     asyncio.create_task(telegram_bot())
-    yield
-
-app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 def root():
-    return {"status": "Institutional Bot Running – Anti‑Spam Build"}
-
-# ---------------- RUN FASTAPI ----------------
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", 8000))
-    )
+    return {"status": "Institutional Bot Running – Debug & Anti-Spam Ready"}
