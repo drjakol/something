@@ -20,6 +20,7 @@ from break_retest import detect_break_retest
 from session_stats import session_winrate
 from stats_engine import calculate_stats
 
+# ⬇️ FIX IS HERE
 from score_engine import smart_score_v2
 
 # v2 additions
