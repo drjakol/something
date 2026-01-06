@@ -19,7 +19,8 @@ from range_tracker import update_asia_range, get_asia_range
 from break_retest import detect_break_retest
 from session_stats import session_winrate
 from stats_engine import calculate_stats
-from score_engine import smart_score
+
+from score_engine import smart_score_v2
 
 # v2 additions
 from htf_bias import get_htf_bias
@@ -36,7 +37,7 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT"]
 SIGNAL_LOG_FILE = "signals_log.jsonl"
 COOLDOWN_SECONDS = 300
-SCORE_THRESHOLD = 10
+SCORE_THRESHOLD = 70
 
 DERIBIT_SYMBOL = "BTC-PERPETUAL"
 
@@ -107,7 +108,6 @@ async def telegram_bot():
                 session = active_session()
                 kill_zone = get_kill_zone()
 
-                # No Trade Zone
                 if not session or not kill_zone:
                     continue
 
@@ -115,7 +115,6 @@ async def telegram_bot():
                 okx_trades = await asyncio.to_thread(get_trades, symbol)
                 okx_orderbook = await asyncio.to_thread(get_orderbook, symbol)
 
-                # Asia Range
                 if session == "Asia":
                     update_asia_range(symbol, okx_price)
 
@@ -125,7 +124,7 @@ async def telegram_bot():
                 orderflow = calculate_orderflow(okx_trades)
                 direction = "LONG" if orderflow["delta"] > 0 else "SHORT"
 
-                # v2 HTF Bias filter
+                # HTF Bias filter
                 htf_bias = get_htf_bias(symbol)
                 if (direction == "LONG" and htf_bias == "BEARISH") or \
                    (direction == "SHORT" and htf_bias == "BULLISH"):
@@ -145,43 +144,36 @@ async def telegram_bot():
 
                 consolidation = check_consolidation(okx_orderbook)
 
-                # Volatility filter (v2)
                 candles = okx.fetch_ohlcv(symbol, timeframe="5m", limit=50)
                 if not volatility_ok(candles):
                     continue
 
-                # Deribit confirmation
                 deri_price = await get_deribit_price()
                 deri_oi = await get_deribit_oi()
 
-                price = (
-                    (okx_price + deri_price) / 2
-                    if deri_price else okx_price
-                )
+                price = (okx_price + deri_price) / 2 if deri_price else okx_price
 
-                # Smart Institutional Score
-                score = smart_score(
-                    kill_zone=kill_zone,
-                    br=br_confirmed,
-                    orderflow=orderflow,
-                    liquidity=liquidity,
-                    stop_hunt=stop_hunt,
-                    consolidation=consolidation,
-                    oi=deri_oi
-                )
+                # -------- SCORE (v2) --------
+                base_score = 0
+                base_score += 25 if br_confirmed else -20
+                base_score += 20 if stop_hunt else 0
+                base_score += 15 if liquidity else -10
+                base_score -= 20 if consolidation else 0
 
-                now = time.time()
+                stats = calculate_stats()
+                winrate = stats["winrate"] if stats else None
+                score = smart_score_v2(base_score, winrate)
+
                 if score < SCORE_THRESHOLD:
                     continue
 
+                now = time.time()
                 if now - last_signal_time[symbol] < COOLDOWN_SECONDS:
                     continue
 
                 levels = build_signal_levels(price, direction)
                 session_stats = session_winrate()
-                global_stats = calculate_stats()
 
-                # -------- TELEGRAM MESSAGE (ORIGINAL FORMAT) --------
                 msg = f"""
 🔥 {normalize_symbol(symbol)} INSTITUTIONAL SIGNAL
 
