@@ -1,7 +1,4 @@
 def check_consolidation(orderbook, threshold=0.5):
-    """
-    تشخیص Consolidation با threshold قابل تغییر
-    """
     bids = orderbook.get("bids", [])
     asks = orderbook.get("asks", [])
 
