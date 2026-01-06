@@ -16,6 +16,7 @@ from coinglass_client import (
     get_open_interest,
     get_long_short_ratio,
     get_liquidations,
+    get_options_oi,
     get_etf_flow
 )
 from macro_score import macro_score
@@ -69,11 +70,11 @@ async def telegram_bot():
                     p_prev = prev_price.get(symbol, price)
                     price_change = price - p_prev
 
-                    oi = open_interest()
-                    ls = long_short_ratio()
-                    liq = liquidations()
-                    opt = options_oi()
-                    etf = etf_flow()
+                    oi = get_open_interest()
+                    ls = get_long_short_ratio()
+                    liq = get_liquidations()
+                    opt = get_options_oi()
+                    etf = get_etf_flow()
 
                     macro = macro_score(
                         price_change, oi, ls, liq, opt, etf, price
