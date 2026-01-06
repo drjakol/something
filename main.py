@@ -30,7 +30,7 @@ COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT"]
 SIGNAL_LOG_FILE = "signals_log.jsonl"
 
 COOLDOWN_SECONDS = 600          # ⏱ 10 minutes cooldown
-SCORE_THRESHOLD = 10            # 🎯 Minimum Smart Score
+SCORE_THRESHOLD = 0            # 🎯 Minimum Smart Score
 
 DERIBIT_SYMBOL = "BTC-PERPETUAL"
 
