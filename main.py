@@ -27,7 +27,7 @@ COINS = [
 ]
 
 SCORE_THRESHOLD = 60
-COOLDOWN_SECONDS = 300  # 5 دقیقه
+COOLDOWN_SECONDS = 300
 SIGNAL_LOG_FILE = "signals_log.jsonl"
 
 bot = Bot(token=BOT_TOKEN)
@@ -69,7 +69,14 @@ def calculate_score(
 ):
     score = 0
 
-    score += 20 if session else -30
+    # Session weight
+    if session == "Asia":
+        score += 15
+    elif session in ("London", "New York"):
+        score += 25
+    else:
+        score -= 30
+
     score += 20 if abs(orderflow["delta"]) > 50 else -10
     score += 15 if abs(orderflow["cvd"]) > 50 else 0
     score += 15 if not in_consolidation else -20
@@ -83,13 +90,12 @@ def calculate_score(
 last_signal_time = defaultdict(lambda: 0)
 
 async def telegram_bot():
-    print("🚀 Bot started")
+    print("🚀 Bot started with Asia / London / NY Sessions")
     prev_prices = {symbol: None for symbol in COINS}
 
     while True:
         for symbol in COINS:
             try:
-                # Session Filter
                 session = active_session()
                 if not session:
                     continue
@@ -136,7 +142,7 @@ async def telegram_bot():
                     msg = f"""
 🔥 {normalize_symbol(symbol)} SMART SIGNAL
 
-📍 Session: {session}
+🌍 Session: {session}
 📊 Score: {score}
 
 🟢 Direction: {direction}
@@ -165,13 +171,13 @@ Expectancy: {stats['expectancy'] if stats else '--'}
                         "symbol": normalize_symbol(symbol),
                         "direction": direction,
                         "score": score,
+                        "session": session,
                         "entry": levels["entry"],
                         "sl": levels["sl"],
                         "tp1": levels["tp1"],
                         "tp2": levels["tp2"],
                         "delta": orderflow["delta"],
-                        "cvd": orderflow["cvd"],
-                        "session": session
+                        "cvd": orderflow["cvd"]
                     })
 
                 prev_prices[symbol] = price
