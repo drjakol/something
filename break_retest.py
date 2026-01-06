@@ -1,34 +1,35 @@
 from collections import defaultdict
 
-# state per symbol + direction
+# ذخیره آخرین وضعیت شکست
 _last_break = defaultdict(dict)
 
-def detect_break_retest(price, levels, direction, symbol, tolerance=0.002):
+def detect_break_retest(price, levels, direction, tolerance=0.002):
     """
-    ICT Break & Retest Logic (Safe Version)
+    ICT Break & Retest Logic
     - Break: قیمت واضح از high/low عبور کند
     - Retest: قیمت دوباره به همان level برگردد
     """
 
-    if not levels or levels.get("high") is None or levels.get("low") is None:
+    if not levels or not levels.get("high") or not levels.get("low"):
         return False
 
-    key = f"{symbol}_{direction}"
-    level = levels["high"] if direction == "LONG" else levels["low"]
+    key = "high" if direction == "LONG" else "low"
+    level = levels[key]
 
-    state = _last_break.get(key, {})
+    state = _last_break.get(key)
 
-    # --- Break ---
-    if not state.get("broken"):
+    # Break
+    if not state:
         if direction == "LONG" and price > level * (1 + tolerance):
-            _last_break[key] = {"broken": True, "level": level}
+            _last_break[key] = {"broken": True}
         elif direction == "SHORT" and price < level * (1 - tolerance):
-            _last_break[key] = {"broken": True, "level": level}
+            _last_break[key] = {"broken": True}
         return False
 
-    # --- Retest ---
-    if abs(price - state["level"]) / state["level"] <= tolerance:
-        _last_break.pop(key, None)  # reset safely
-        return True
+    # Retest
+    if state.get("broken"):
+        if abs(price - level) / level <= tolerance:
+            _last_break[key] = {}  # reset
+            return True
 
     return False
