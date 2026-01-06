@@ -2,16 +2,10 @@ import ccxt
 
 exchange = ccxt.okx({
     "enableRateLimit": True,
-    "options": {
-        "defaultType": "swap"  # futures / perpetual
-    }
+    "options": {"defaultType": "swap"}
 })
 
-SYMBOLS = [
-    "BTC/USDT", "SOL/USDT", "AVAX/USDT",
-    "DOT/USDT", "LTC/USDT", "DOGE/USDT",
-    "LINK/USDT", "UNI/USDT"
-]
+SYMBOLS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT", "DOGE/USDT", "LINK/USDT", "UNI/USDT"]
 
 def get_price(symbol):
     ticker = exchange.fetch_ticker(symbol)
