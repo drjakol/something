@@ -5,5 +5,5 @@ numpy
 websocket-client
 fastapi
 uvicorn
-dash==3.4.1
+dash
 plotly
