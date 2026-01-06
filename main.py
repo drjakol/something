@@ -21,13 +21,16 @@ from break_retest import detect_break_retest
 from stats_engine import calculate_stats
 from session_stats import session_winrate
 
+import ccxt
+deribit = ccxt.deribit({"enableRateLimit": True})
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT"]
+SIGNAL_LOG_FILE = "signals_log.jsonl"
 SCORE_THRESHOLD = 65
 COOLDOWN_SECONDS = 300
-SIGNAL_LOG_FILE = "signals_log.jsonl"
 
 bot = Bot(token=BOT_TOKEN)
 last_signal_time = defaultdict(lambda: 0)
@@ -56,8 +59,24 @@ def log_signal(data):
     with open(SIGNAL_LOG_FILE, "a") as f:
         f.write(json.dumps(data) + "\n")
 
+async def get_deribit_price(symbol="BTC/USDT"):
+    try:
+        ticker = await asyncio.to_thread(deribit.fetch_ticker, symbol)
+        return ticker["last"]
+    except Exception as e:
+        print("Deribit price error:", e)
+        return None
+
+async def get_deribit_oi(symbol="BTC/USDT"):
+    try:
+        oi = await asyncio.to_thread(deribit.fetch_open_interest, symbol)
+        return oi.get("open_interest", 0)
+    except Exception as e:
+        print("Deribit OI error:", e)
+        return 0
+
 async def telegram_bot():
-    print("🚀 Bot with Kill Zones & Break/Retest started")
+    print("🚀 Institutional Bot with Deribit Started")
 
     while True:
         for symbol in COINS:
@@ -67,29 +86,36 @@ async def telegram_bot():
                 if not session or not kill_zone:
                     continue
 
-                price = await asyncio.to_thread(get_price, symbol)
-                trades = await asyncio.to_thread(get_trades, symbol)
-                orderbook = await asyncio.to_thread(get_orderbook, symbol)
+                okx_price = await asyncio.to_thread(get_price, symbol)
+                okx_trades = await asyncio.to_thread(get_trades, symbol)
+                okx_orderbook = await asyncio.to_thread(get_orderbook, symbol)
 
                 if session == "Asia":
-                    update_asia_range(symbol, price)
-
+                    update_asia_range(symbol, okx_price)
                 asia_levels = get_asia_range(symbol)
-                liquidity = build_liquidity_map(orderbook)
-                orderflow = calculate_orderflow(trades)
 
+                liquidity = build_liquidity_map(okx_orderbook)
+                orderflow = calculate_orderflow(okx_trades)
                 direction = "LONG" if orderflow["delta"] > 0 else "SHORT"
+
                 br_confirmed = detect_break_retest(
-                    price,
+                    okx_price,
                     asia_levels if session != "Asia" else None,
                     direction
                 )
 
+                # --- Deribit Integration ---
+                deri_price = await get_deribit_price(symbol)
+                deri_oi = await get_deribit_oi(symbol)
+                price = (okx_price + deri_price)/2 if deri_price else okx_price
+
+                # --- Smart Score Calculation ---
                 score = 0
-                score += 25 if kill_zone else -20
+                score += 25 if kill_zone else -10
                 score += 20 if br_confirmed else -10
-                score += 20 if abs(orderflow["delta"]) > 50 else -10
-                score += 10 if liquidity else -10
+                score += 30 if abs(orderflow["delta"]) > 50 else -15
+                score += 15 if liquidity else -10
+                score += 10 * (deri_oi/1_000_000)  # OI weight
 
                 now = time.time()
                 if score >= SCORE_THRESHOLD and now - last_signal_time[symbol] > COOLDOWN_SECONDS:
@@ -102,7 +128,7 @@ async def telegram_bot():
 
 🌍 Session: {session}
 ⏱ Kill Zone: {kill_zone}
-📊 Score: {score}
+📊 Score: {score:.2f}
 
 🟢 Direction: {direction}
 💰 Entry: {levels['entry']}
@@ -115,10 +141,8 @@ async def telegram_bot():
 Delta: {orderflow['delta']}
 CVD: {orderflow['cvd']}
 
-📊 Winrate by Session:
-Asia: {session_stats.get("Asia", "--")}%
-London: {session_stats.get("London", "--")}%
-New York: {session_stats.get("New York", "--")}%
+🌐 Session Winrate:
+Asia: {session_stats.get("Asia", "--")}% | London: {session_stats.get("London", "--")}% | New York: {session_stats.get("New York", "--")}% 
 """
                     await bot.send_message(chat_id=CHANNEL_ID, text=msg)
                     last_signal_time[symbol] = now
