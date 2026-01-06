@@ -3,6 +3,11 @@ from datetime import datetime, timezone
 def get_kill_zone():
     """
     Kill Zones (UTC)
+    نسخه اصلاح‌شده برای اطمینان از همیشه مقداردهی:
+    - Asia Range: 00:00 – 06:59
+    - London Open: 07:00 – 09:59
+    - New York Open: 13:00 – 17:59
+    - Extended: سایر ساعات برای تست / ارسال پیام
     """
     hour = datetime.now(timezone.utc).hour
 
@@ -10,7 +15,8 @@ def get_kill_zone():
         return "Asia Range"
     elif 7 <= hour <= 9:
         return "London Open"
-    elif 13 <= hour <= 15:
+    elif 13 <= hour <= 17:
         return "New York Open"
     else:
-        return None
+        # مقدار پیش‌فرض برای ساعات غیرجلسه‌ای
+        return "Extended Session"
