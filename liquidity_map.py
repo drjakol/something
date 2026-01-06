@@ -1,39 +1,16 @@
 def build_liquidity_map(orderbook):
-    """
-    ساخت نقشه نقدینگی (Liquidity Map) از Orderbook
-    - orderbook: دیکشنری با keys "bids" و "asks"
-    - هر bid/ask ممکن است یک لیست دو یا سه تایی باشد: [price, size] یا [price, size, extra]
-    """
+    bids = [(float(p), float(s)) for p, s, *_ in orderbook.get("bids", []) if s]
+    asks = [(float(p), float(s)) for p, s, *_ in orderbook.get("asks", []) if s]
 
-    bid_liquidity = orderbook.get("bids", [])
-    ask_liquidity = orderbook.get("asks", [])
+    if not bids or not asks:
+        return None
 
-    # فیلتر و استخراج فقط دو مقدار price و size
-    clean_bids = []
-    for item in bid_liquidity:
-        if len(item) >= 2:
-            price, size = item[0], item[1]
-            clean_bids.append((float(price), float(size)))
-
-    clean_asks = []
-    for item in ask_liquidity:
-        if len(item) >= 2:
-            price, size = item[0], item[1]
-            clean_asks.append((float(price), float(size)))
-
-    # محاسبه حمایت و مقاومت بر اساس بیشترین نقدینگی
-    support_zone = min([price for price, size in clean_bids], default=None)
-    resistance_zone = max([price for price, size in clean_asks], default=None)
-
-    # می‌توانید نقدینگی کل در هر محدوده را هم اضافه کنید
-    total_bid_liq = sum([size for price, size in clean_bids])
-    total_ask_liq = sum([size for price, size in clean_asks])
+    support = max(bids, key=lambda x: x[1])[0]
+    resistance = max(asks, key=lambda x: x[1])[0]
 
     return {
-        "support": support_zone,
-        "resistance": resistance_zone,
-        "total_bid_liquidity": total_bid_liq,
-        "total_ask_liquidity": total_ask_liq,
-        "bids": clean_bids,
-        "asks": clean_asks
+        "support": support,
+        "resistance": resistance,
+        "bids": sorted(bids, key=lambda x: x[1], reverse=True)[:5],
+        "asks": sorted(asks, key=lambda x: x[1], reverse=True)[:5]
     }
