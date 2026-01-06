@@ -13,8 +13,10 @@ from range_tracker import update_asia_range, get_asia_range
 from break_retest import detect_break_retest
 
 from coinglass_client import (
-    open_interest, long_short_ratio,
-    liquidations, options_oi, etf_flow
+    get_open_interest,
+    get_long_short_ratio,
+    get_liquidations,
+    get_etf_flow
 )
 from macro_score import macro_score
 
