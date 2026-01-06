@@ -29,7 +29,7 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT"]
 SIGNAL_LOG_FILE = "signals_log.jsonl"
 COOLDOWN_SECONDS = 60       # Anti-Spam: فاصله پیام‌ها
-SCORE_THRESHOLD = 10         # حداقل Smart Score برای ارسال سیگنال
+SCORE_THRESHOLD = 10        # حداقل Smart Score برای ارسال سیگنال
 
 DERIBIT_SYMBOL = "BTC-PERPETUAL"
 
@@ -121,9 +121,14 @@ async def telegram_bot():
 
                 consolidation = check_consolidation(okx_orderbook)
 
-                deri_price = await get_deribit_price()
-                deri_oi = await get_deribit_oi()
-                price = (okx_price + deri_price) / 2 if deri_price else okx_price
+                # ---------------- Price Logic ----------------
+                if symbol == "BTC/USDT":
+                    deri_price = await get_deribit_price()
+                    price = (okx_price + (deri_price or okx_price)) / 2
+                    deri_oi = await get_deribit_oi()
+                else:
+                    price = okx_price
+                    deri_oi = 0  # فقط برای BTC اثر دارد
 
                 # ---------------- Smart Score ----------------
                 base_score = 0
@@ -133,13 +138,13 @@ async def telegram_bot():
                 base_score += 10 if liquidity else 0
                 base_score += 15 if stop_hunt else 0
                 base_score += 20 if not consolidation else 0
-                base_score += int(deri_oi / 1_000_000 * 10)
+                base_score += min(int(deri_oi / 1_000_000 * 10), 20)  # حداکثر 20 امتیاز از OI
 
                 session_win = session_winrate()
                 score = smart_score_v2(base_score=base_score, winrate=session_win.get(session, 50))
 
                 # ---------------- Debug Info ----------------
-                print(f"DEBUG: {symbol} | base_score={base_score} | score={score} | br_confirmed={br_confirmed} | stop_hunt={stop_hunt} | liquidity={liquidity is not None}")
+                print(f"DEBUG: {symbol} | base_score={base_score} | score={score} | br_confirmed={br_confirmed} | stop_hunt={stop_hunt} | liquidity={liquidity is not None} | price={price}")
 
                 # ---------------- Anti-Spam ----------------
                 now = time.time()
