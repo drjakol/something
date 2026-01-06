@@ -31,7 +31,7 @@ last_signal = defaultdict(lambda: 0)
 
 COINS = ["BTC/USDT"]
 COOLDOWN = 600
-BASE_SCORE_THRESHOLD = 70
+BASE_SCORE_THRESHOLD = 10
 
 async def bot_loop():
     while True:
@@ -89,7 +89,7 @@ async def bot_loop():
                 trade = build_trade(price, direction, sl_distance=price*0.002)
 
                 msg = f"""
-🔥 {symbol.replace('/','')} v2 REAL TRADE
+🔥 {symbol.replace('/','')} TRADE
 
 Direction: {direction}
 Entry: {trade['entry']}
