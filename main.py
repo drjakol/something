@@ -5,7 +5,6 @@ import time
 from datetime import datetime, timezone
 from collections import defaultdict
 
-from fastapi import FastAPI
 from telegram import Bot
 
 from data_okx import get_price, get_trades, get_orderbook
@@ -19,17 +18,9 @@ from range_tracker import update_asia_range, get_asia_range
 from break_retest import detect_break_retest
 from session_stats import session_winrate
 from stats_engine import calculate_stats
-
-# ⬇️ FIX IS HERE
 from score_engine import smart_score_v2
 
-# v2 additions
-from htf_bias import get_htf_bias
-from volatility_filter import volatility_ok
-from capital_guard import trading_allowed
-
 import ccxt
-from contextlib import asynccontextmanager
 
 # ---------------- CONFIG ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -37,17 +28,15 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT"]
 SIGNAL_LOG_FILE = "signals_log.jsonl"
-COOLDOWN_SECONDS = 300
-SCORE_THRESHOLD = 0
+COOLDOWN_SECONDS = 10       # برای تست خیلی کوتاه
+SCORE_THRESHOLD = 0         # برای تست پیام فوری
 
 DERIBIT_SYMBOL = "BTC-PERPETUAL"
 
 # ---------------- INIT ----------------
 bot = Bot(token=BOT_TOKEN)
 last_signal_time = defaultdict(lambda: 0)
-
 deribit = ccxt.deribit({"enableRateLimit": True})
-okx = ccxt.okx({"enableRateLimit": True})
 
 # ---------------- HELPERS ----------------
 def normalize_symbol(symbol):
@@ -55,7 +44,6 @@ def normalize_symbol(symbol):
 
 def build_signal_levels(price, direction):
     precision = 2 if price > 100 else 4
-
     if direction == "LONG":
         return {
             "entry": f"{round(price * 0.995, precision)}–{round(price * 1.001, precision)}",
@@ -82,7 +70,8 @@ async def get_deribit_price():
             deribit.fetch_ticker, DERIBIT_SYMBOL
         )
         return ticker["last"]
-    except:
+    except Exception as e:
+        print("Deribit price error:", e)
         return None
 
 async def get_deribit_oi():
@@ -92,20 +81,17 @@ async def get_deribit_oi():
             {"currency": "BTC", "kind": "future"}
         )
         return float(data["result"][0]["open_interest"])
-    except:
+    except Exception as e:
+        print("Deribit OI error:", e)
         return 0
 
 # ---------------- MAIN BOT LOOP ----------------
 async def telegram_bot():
-    print("🚀 Institutional Killer Bot v2 Started")
+    print("🚀 Institutional Killer Bot v2 Test Started")
 
     while True:
         for symbol in COINS:
             try:
-                # Capital protection
-                if not trading_allowed():
-                    continue
-
                 session = active_session()
                 kill_zone = get_kill_zone()
 
@@ -118,18 +104,11 @@ async def telegram_bot():
 
                 if session == "Asia":
                     update_asia_range(symbol, okx_price)
-
                 asia_levels = get_asia_range(symbol)
 
                 liquidity = build_liquidity_map(okx_orderbook)
                 orderflow = calculate_orderflow(okx_trades)
                 direction = "LONG" if orderflow["delta"] > 0 else "SHORT"
-
-                # HTF Bias filter
-                htf_bias = get_htf_bias(symbol)
-                if (direction == "LONG" and htf_bias == "BEARISH") or \
-                   (direction == "SHORT" and htf_bias == "BULLISH"):
-                    continue
 
                 br_confirmed = detect_break_retest(
                     okx_price,
@@ -145,35 +124,22 @@ async def telegram_bot():
 
                 consolidation = check_consolidation(okx_orderbook)
 
-                candles = okx.fetch_ohlcv(symbol, timeframe="5m", limit=50)
-                if not volatility_ok(candles):
-                    continue
-
                 deri_price = await get_deribit_price()
                 deri_oi = await get_deribit_oi()
-
                 price = (okx_price + deri_price) / 2 if deri_price else okx_price
 
-                # -------- SCORE (v2) --------
-                base_score = 0
-                base_score += 25 if br_confirmed else -20
-                base_score += 20 if stop_hunt else 0
-                base_score += 15 if liquidity else -10
-                base_score -= 20 if consolidation else 0
-
+                # Smart Score
+                session_win = session_winrate()
                 stats = calculate_stats()
-                winrate = stats["winrate"] if stats else None
-                score = smart_score_v2(base_score, winrate)
-
-                if score < SCORE_THRESHOLD:
-                    continue
+                score = smart_score_v2(base_score=100, winrate=session_win.get(session, 50))
 
                 now = time.time()
+                if score < SCORE_THRESHOLD:
+                    continue
                 if now - last_signal_time[symbol] < COOLDOWN_SECONDS:
                     continue
 
                 levels = build_signal_levels(price, direction)
-                session_stats = session_winrate()
 
                 msg = f"""
 🔥 {normalize_symbol(symbol)} INSTITUTIONAL SIGNAL
@@ -196,13 +162,10 @@ Delta: {orderflow['delta']}
 CVD: {orderflow['cvd']}
 
 📊 Session Winrate:
-Asia: {session_stats.get("Asia", "--")}%
-London: {session_stats.get("London", "--")}%
-New York: {session_stats.get("New York", "--")}%
+Asia: {session_win.get("Asia", "--")}% | London: {session_win.get("London", "--")}% | New York: {session_win.get("New York", "--")}%
 """
 
                 await bot.send_message(chat_id=CHANNEL_ID, text=msg)
-
                 log_signal({
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "symbol": normalize_symbol(symbol),
@@ -216,30 +179,15 @@ New York: {session_stats.get("New York", "--")}%
                 })
 
                 last_signal_time[symbol] = now
-                await asyncio.sleep(5)
+                await asyncio.sleep(2)
 
             except Exception as e:
                 print(f"❌ Error {symbol}:", e)
-                await asyncio.sleep(5)
+                await asyncio.sleep(2)
 
-        await asyncio.sleep(30)
+        await asyncio.sleep(5)
 
-# ---------------- FASTAPI (LIFESPAN) ----------------
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    asyncio.create_task(telegram_bot())
-    yield
 
-app = FastAPI(lifespan=lifespan)
-
-@app.get("/")
-def root():
-    return {"status": "Institutional Bot v2 Running"}
-
+# ---------------- RUN STANDALONE ----------------
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", 8000))
-    )
+    asyncio.run(telegram_bot())
