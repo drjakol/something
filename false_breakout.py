@@ -1,17 +1,11 @@
-def filter_false_breakout(price, liquidity, prev_price):
-    """
-    جلوگیری از سیگنال‌های اشتباه Breakout
-    """
+def filter_false_breakout(price, liquidity, delta):
     if not liquidity:
-        return True
+        return False
 
-    if price > liquidity["resistance"] * 1.01:
-        return True
-    if price < liquidity["support"] * 0.99:
-        return True
+    if price > liquidity["resistance"] and delta < 0:
+        return False
 
-    # اگر حرکت خیلی کوچک بود
-    if abs(price - prev_price) < 0.5:
+    if price < liquidity["support"] and delta > 0:
         return False
 
     return True
