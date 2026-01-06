@@ -1,63 +1,38 @@
-import asyncio
-import os
-import json
-import time
+import asyncio, os, time, json
 from datetime import datetime, timezone
 from collections import defaultdict
-
 from fastapi import FastAPI
 from telegram import Bot
 
 from data_okx import get_price, get_trades, get_orderbook
 from liquidity_map import build_liquidity_map
-from stop_hunt import detect_stop_hunt
-from false_breakout import filter_false_breakout
-from consolidation import check_consolidation
 from orderflow import calculate_orderflow
 from session_filter import active_session
 from kill_zones import get_kill_zone
 from range_tracker import update_asia_range, get_asia_range
 from break_retest import detect_break_retest
-from stats_engine import calculate_stats
-from session_stats import session_winrate
+
+from coinglass_client import (
+    open_interest, long_short_ratio,
+    liquidations, options_oi, etf_flow
+)
+from macro_score import macro_score
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 
-COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT", "DOT/USDT", "LTC/USDT"]
-SCORE_THRESHOLD = 65
-COOLDOWN_SECONDS = 300
-SIGNAL_LOG_FILE = "signals_log.jsonl"
+COINS = ["BTC/USDT", "SOL/USDT", "AVAX/USDT"]
+SCORE_THRESHOLD = 80
+COOLDOWN = 300
 
-bot = Bot(token=BOT_TOKEN)
-last_signal_time = defaultdict(lambda: 0)
+bot = Bot(BOT_TOKEN)
+last_signal = defaultdict(lambda: 0)
+prev_price = {}
 
-def normalize_symbol(symbol):
-    return symbol.replace("/", "")
-
-def build_signal_levels(price, direction):
-    precision = 4 if price < 100 else 2
-    if direction == "LONG":
-        return {
-            "entry": f"{round(price*0.995, precision)}–{round(price*1.001, precision)}",
-            "sl": round(price*0.99, precision),
-            "tp1": round(price*1.015, precision),
-            "tp2": round(price*1.03, precision)
-        }
-    else:
-        return {
-            "entry": f"{round(price*0.999, precision)}–{round(price*1.005, precision)}",
-            "sl": round(price*1.01, precision),
-            "tp1": round(price*0.985, precision),
-            "tp2": round(price*0.97, precision)
-        }
-
-def log_signal(data):
-    with open(SIGNAL_LOG_FILE, "a") as f:
-        f.write(json.dumps(data) + "\n")
+def normalize(s): return s.replace("/", "")
 
 async def telegram_bot():
-    print("🚀 Bot with Kill Zones & Break/Retest started")
+    print("🚀 Institutional Bot Started")
 
     while True:
         for symbol in COINS:
@@ -74,68 +49,70 @@ async def telegram_bot():
                 if session == "Asia":
                     update_asia_range(symbol, price)
 
-                asia_levels = get_asia_range(symbol)
+                asia_range = get_asia_range(symbol)
                 liquidity = build_liquidity_map(orderbook)
                 orderflow = calculate_orderflow(trades)
 
                 direction = "LONG" if orderflow["delta"] > 0 else "SHORT"
-                br_confirmed = detect_break_retest(
+
+                br = detect_break_retest(
                     price,
-                    asia_levels if session != "Asia" else None,
+                    asia_range if session != "Asia" else None,
                     direction
                 )
 
-                score = 0
-                score += 25 if kill_zone else -20
-                score += 20 if br_confirmed else -10
-                score += 20 if abs(orderflow["delta"]) > 50 else -10
-                score += 10 if liquidity else -10
+                # -------- MACRO DATA (BTC only) --------
+                macro = 0
+                if symbol.startswith("BTC"):
+                    p_prev = prev_price.get(symbol, price)
+                    price_change = price - p_prev
+
+                    oi = open_interest()
+                    ls = long_short_ratio()
+                    liq = liquidations()
+                    opt = options_oi()
+                    etf = etf_flow()
+
+                    macro = macro_score(
+                        price_change, oi, ls, liq, opt, etf, price
+                    )
+
+                score = (
+                    25 +
+                    (20 if br else -10) +
+                    (20 if abs(orderflow["delta"]) > 50 else -10) +
+                    macro
+                )
 
                 now = time.time()
-                if score >= SCORE_THRESHOLD and now - last_signal_time[symbol] > COOLDOWN_SECONDS:
-                    levels = build_signal_levels(price, direction)
-                    stats = calculate_stats()
-                    session_stats = session_winrate()
-
+                if score >= SCORE_THRESHOLD and now - last_signal[symbol] > COOLDOWN:
                     msg = f"""
-🔥 {normalize_symbol(symbol)} PRO SIGNAL
+🔥 {normalize(symbol)} INSTITUTIONAL SIGNAL
 
 🌍 Session: {session}
 ⏱ Kill Zone: {kill_zone}
 📊 Score: {score}
 
 🟢 Direction: {direction}
-💰 Entry: {levels['entry']}
-🛑 SL: {levels['sl']}
-🎯 TP1: {levels['tp1']} | TP2: {levels['tp2']}
+💰 Price: {price}
 
-📉 Break & Retest: {"Confirmed" if br_confirmed else "No"}
+📉 Break & Retest: {"Yes" if br else "No"}
 
-📈 Order Flow:
+📈 Orderflow:
 Delta: {orderflow['delta']}
 CVD: {orderflow['cvd']}
 
-📊 Winrate by Session:
-Asia: {session_stats.get("Asia", "--")}%
-London: {session_stats.get("London", "--")}%
-New York: {session_stats.get("New York", "--")}%
+🌐 Macro Bias:
+Score: {macro}
 """
                     await bot.send_message(chat_id=CHANNEL_ID, text=msg)
-                    last_signal_time[symbol] = now
+                    last_signal[symbol] = now
 
-                    log_signal({
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "symbol": normalize_symbol(symbol),
-                        "session": session,
-                        "kill_zone": kill_zone,
-                        "direction": direction,
-                        "score": score
-                    })
-
+                prev_price[symbol] = price
                 await asyncio.sleep(6)
 
             except Exception as e:
-                print(f"❌ Error {symbol}: {e}")
+                print("Error:", e)
                 await asyncio.sleep(6)
 
         await asyncio.sleep(60)
@@ -152,7 +129,3 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/")
 def root():
     return {"status": "running"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
