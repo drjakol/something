@@ -195,18 +195,21 @@ async def telegram_bot():
         await asyncio.sleep(5)
 
 # ================= FASTAPI =================
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
 
-app = FastAPI()
-
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start bot on app startup
     asyncio.create_task(telegram_bot())
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 def root():
     return {"status": "Institutional Bot Running – Anti‑Spam Active"}
 
+# ================= RUN =================
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
