@@ -1,13 +1,18 @@
 import json
-from main import SIGNAL_LOG_FILE
-
+from main import SIGNAL_LOG_FILE  # مسیر فایل سیگنال‌ها
 PNL_LOG_FILE = "pnl_log.jsonl"
 
 def calculate_pnl(entry, exit_price, direction):
+    try:
+        entry = float(entry)
+        exit_price = float(exit_price)
+    except Exception:
+        return 0
+
     if direction == "LONG":
-        return exit_price - entry
+        return round(exit_price - entry, 2)
     else:
-        return entry - exit_price
+        return round(entry - exit_price, 2)
 
 def backtest_signals():
     results = []
@@ -33,6 +38,5 @@ def backtest_signals():
                 f.write(json.dumps(r) + "\n")
 
         print("✅ Backtest Completed:", len(results))
-
     except FileNotFoundError:
-        print("⚠️ Signal log file not found. Run bot first.")
+        print("❌ SIGNAL_LOG_FILE not found")
