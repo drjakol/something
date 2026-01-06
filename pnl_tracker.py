@@ -1,14 +1,11 @@
 import json
-from main import SIGNAL_LOG_FILE  # مسیر فایل سیگنال‌ها
+from break_retest import detect_break_retest  # فقط در صورت نیاز
+from risk_engine import build_trade  # اگر نیاز به محاسبه PnL دارید
+
+SIGNAL_LOG_FILE = "signals_log.jsonl"
 PNL_LOG_FILE = "pnl_log.jsonl"
 
 def calculate_pnl(entry, exit_price, direction):
-    try:
-        entry = float(entry)
-        exit_price = float(exit_price)
-    except Exception:
-        return 0
-
     if direction == "LONG":
         return round(exit_price - entry, 2)
     else:
@@ -27,7 +24,8 @@ def backtest_signals():
                 sl = float(sig["sl"])
                 direction = sig["direction"]
 
-                exit_price = tp  # فرض رسیدن TP1
+                # فرض رسیدن TP1
+                exit_price = tp
                 pnl = calculate_pnl(entry, exit_price, direction)
 
                 sig["pnl"] = pnl
@@ -37,6 +35,7 @@ def backtest_signals():
             for r in results:
                 f.write(json.dumps(r) + "\n")
 
-        print("✅ Backtest Completed:", len(results))
+        print(f"✅ Backtest Completed: {len(results)} trades")
+
     except FileNotFoundError:
-        print("❌ SIGNAL_LOG_FILE not found")
+        print("⚠️ SIGNAL_LOG_FILE not found. Cannot backtest.")
